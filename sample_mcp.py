@@ -1,21 +1,18 @@
 """
-Minimal MCP server example (Python 3.11+)
+Minimal MCP server (Python 3.11+) – still uses cupcake demo data.
 
-• Still uses cupcake-demo data so ChatGPT’s deep-research handshake works.
-• Includes Follow Up Boss auth headers so you can swap in real API calls later.
+• Publishes /.well-known/mcp.json so ChatGPT can create the connector.
+• Keeps HEADERS ready for real Follow Up Boss API calls later.
 """
 
 import json
 import os
 from pathlib import Path
 
-import httpx                               # handy later for real FUB calls
 from fastmcp.server import FastMCP
-from starlette.responses import JSONResponse        # ⭐ starlette, not fastapi
+from starlette.responses import JSONResponse   # starlette is already installed
 
-# ───────────────────────────────────────────────────────────
-#  Follow Up Boss auth headers (set as secrets in Render)
-# ───────────────────────────────────────────────────────────
+# ────────── FUB headers (set as secrets in Render) ──────────
 HEADERS = {
     "Authorization": f"Bearer {os.environ['FUB_API_KEY']}",
     "X-System":      os.environ.get("FUB_X_SYSTEM", ""),
@@ -23,36 +20,30 @@ HEADERS = {
     "Content-Type":  "application/json",
 }
 
-# cupcake demo data ----------------------------------------
+# cupcake demo data
 RECORDS = json.loads(Path(__file__).with_name("records.json").read_text())
 LOOKUP  = {r["id"]: r for r in RECORDS}
 
-
 def create_server() -> FastMCP:
-    """Build and return a FastMCP server instance."""
     mcp = FastMCP(name="Cupcake MCP", instructions="Search cupcake orders")
 
-    # metadata endpoint so ChatGPT can discover the tools
-    fastapi = mcp.app                       # FastAPI instance inside FastMCP
+    # metadata route so ChatGPT finds the tools
+    fastapi = mcp.app
     @fastapi.get("/.well-known/mcp.json", include_in_schema=False)
     async def _metadata():
         return JSONResponse(mcp.schema())
 
-    # ---------- search tool ----------
+    # ------------ search tool ------------
     @mcp.tool()
     async def search(query: str):
-        toks = query.lower().split()
-        ids: list[str] = []
-        for r in RECORDS:
-            hay = " ".join(
-                [r.get("title", ""), r.get("text", ""),
-                 " ".join(r.get("metadata", {}).values())]
-            ).lower()
-            if any(t in hay for t in toks):
-                ids.append(r["id"])
+        tokens = query.lower().split()
+        ids = [r["id"] for r in RECORDS
+               if any(t in " ".join([r.get("title",""), r.get("text",""),
+                                     " ".join(r.get("metadata",{}).values())]).lower()
+                      for t in tokens)]
         return {"ids": ids}
 
-    # ---------- fetch tool -----------
+    # ------------ fetch tool -------------
     @mcp.tool()
     async def fetch(id: str):
         if id not in LOOKUP:
@@ -61,10 +52,7 @@ def create_server() -> FastMCP:
 
     return mcp
 
-
-# ───────────────────────────────────────────────────────────
-#  Run directly (works on Render free tier)
-# ───────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))   # Render injects $PORT
-    create_server().run(transport="sse", host="0.0.0.0", port=port)
+    port = int(os.environ.get("PORT", 8000))      # Render injects $PORT
+    create_server().run(transport="sse",
+                        host="0.0.0.0", port=port)
