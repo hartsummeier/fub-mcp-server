@@ -74,7 +74,7 @@ def create_server() -> FastMCP:
 # ---------------------------------------------------------------------------
 # When launched by a WSGI/ASGI runner (e.g. `uvicorn sample_mcp:app ...`)
 # ---------------------------------------------------------------------------
-app = create_server()
+app = create_server().asgi  
 
 # ---------------------------------------------------------------------------
 # When run directly (e.g. python sample_mcp.py) – local testing convenience
