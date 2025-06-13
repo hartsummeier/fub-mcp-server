@@ -1,51 +1,56 @@
 """
-Cupcake MCP – works with FastMCP 2.5.x
-Publishes /.well-known/mcp.json so ChatGPT can discover the tools.
+Minimal MCP server – works with FastMCP 2.5.x as-is.
+Still uses cupcake demo data so ChatGPT can connect.
+
+Put your Follow Up Boss secrets in Render ➜ Environment:
+  • FUB_API_KEY
+  • FUB_CLIENT_ID
+  • FUB_CLIENT_SECRET
+  • FUB_X_SYSTEM  (if you have it)
+  • FUB_X_SYSTEM_KEY (if you have it)
 """
 
 import json, os
 from pathlib import Path
 from fastmcp.server import FastMCP
-from starlette.responses import JSONResponse
 
-# demo records -------------------------------------------------
+# --- optional FUB header holder (unused until you add real API calls) ----
+HEADERS = {
+    "Authorization": f"Bearer {os.getenv('FUB_API_KEY', '')}",
+    "X-System":      os.getenv("FUB_X_SYSTEM", ""),
+    "X-System-Key":  os.getenv("FUB_X_SYSTEM_KEY", ""),
+    "Content-Type":  "application/json",
+}
+
+# cupcake demo data -------------------------------------------------------
 RECORDS = json.loads(Path(__file__).with_name("records.json").read_text())
 LOOKUP  = {r["id"]: r for r in RECORDS}
 
-def create_server() -> FastMCP:
-    mcp = FastMCP(name="Cupcake MCP",
-                  instructions="Search cupcake orders")
+mcp = FastMCP(name="Cupcake MCP", instructions="Search cupcake orders")
 
-    # metadata route (must exist for ChatGPT connector)
-    @mcp.route("/.well-known/mcp.json", methods=["GET"], include_in_schema=False)
-    async def _meta(req):
-        return JSONResponse(mcp.schema())
+@mcp.tool()
+async def search(query: str):
+    """Very dumb keyword search over demo data"""
+    needles = query.lower().split()
+    ids = [
+        r["id"]
+        for r in RECORDS
+        if any(n in " ".join([r.get("title",""), r.get("text",""),
+                              " ".join(r.get("metadata",{}).values())]).lower()
+               for n in needles)
+    ]
+    return {"ids": ids}
 
-    # ---------- search ----------
-    @mcp.tool()
-    async def search(query: str):
-        toks = query.lower().split()
-        ids = [
-            r["id"] for r in RECORDS
-            if any(
-                t in " ".join(
-                    [r.get("title",""), r.get("text",""),
-                     " ".join(r.get("metadata",{}).values())]
-                ).lower() for t in toks
-            )
-        ]
-        return {"ids": ids}
+@mcp.tool()
+async def fetch(id: str):
+    """Return full record for the id ChatGPT asks for."""
+    if id not in LOOKUP:
+        raise ValueError("unknown id")
+    return LOOKUP[id]
 
-    # ---------- fetch -----------
-    @mcp.tool()
-    async def fetch(id: str):
-        if id not in LOOKUP:
-            raise ValueError("unknown id")
-        return LOOKUP[id]
-
-    return mcp
-
+# -------------------------------------------------------------------------
+#  Render (or local) entry-point
+# -------------------------------------------------------------------------
 if __name__ == "__main__":
-    # Render injects the port number via $PORT
-    port = int(os.environ.get("PORT", 8000))
-    create_server().run(transport="sse", host="0.0.0.0", port=port)
+    port = int(os.environ.get("PORT", 8000))   # Render injects $PORT
+    mcp.run(transport="sse", host="0.0.0.0", port=port)
