@@ -9,48 +9,50 @@ import json
 import os
 from pathlib import Path
 
-import httpx                    # handy later for real FUB calls
+import httpx                               # handy later for real FUB calls
 from fastmcp.server import FastMCP
-from starlette.responses import JSONResponse   # ⭐ starlette, NOT fastapi
+from starlette.responses import JSONResponse        # ⭐ starlette, not fastapi
 
-# ───────────────────────────────────────────────────────────────
+# ───────────────────────────────────────────────────────────
 #  Follow Up Boss auth headers (set as secrets in Render)
-# ───────────────────────────────────────────────────────────────
+# ───────────────────────────────────────────────────────────
 HEADERS = {
     "Authorization": f"Bearer {os.environ['FUB_API_KEY']}",
-    "X-System": os.environ.get("FUB_X_SYSTEM", ""),
-    "X-System-Key": os.environ.get("FUB_X_SYSTEM_KEY", ""),
-    "Content-Type": "application/json",
+    "X-System":      os.environ.get("FUB_X_SYSTEM", ""),
+    "X-System-Key":  os.environ.get("FUB_X_SYSTEM_KEY", ""),
+    "Content-Type":  "application/json",
 }
 
-# demo data -----------------------------------------------------
+# cupcake demo data ----------------------------------------
 RECORDS = json.loads(Path(__file__).with_name("records.json").read_text())
-LOOKUP = {r["id"]: r for r in RECORDS}
+LOOKUP  = {r["id"]: r for r in RECORDS}
 
 
 def create_server() -> FastMCP:
     """Build and return a FastMCP server instance."""
     mcp = FastMCP(name="Cupcake MCP", instructions="Search cupcake orders")
 
-    # --- metadata endpoint so ChatGPT can discover the tools ---
-    @mcp.router.get("/.well-known/mcp.json", include_in_schema=False)
+    # metadata endpoint so ChatGPT can discover the tools
+    fastapi = mcp.app                       # FastAPI instance inside FastMCP
+    @fastapi.get("/.well-known/mcp.json", include_in_schema=False)
     async def _metadata():
         return JSONResponse(mcp.schema())
 
-    # ----------------- search tool -----------------
+    # ---------- search tool ----------
     @mcp.tool()
     async def search(query: str):
         toks = query.lower().split()
         ids: list[str] = []
         for r in RECORDS:
-            haystack = " ".join(
-                [r.get("title", ""), r.get("text", ""), " ".join(r.get("metadata", {}).values())]
+            hay = " ".join(
+                [r.get("title", ""), r.get("text", ""),
+                 " ".join(r.get("metadata", {}).values())]
             ).lower()
-            if any(t in haystack for t in toks):
+            if any(t in hay for t in toks):
                 ids.append(r["id"])
         return {"ids": ids}
 
-    # ----------------- fetch tool ------------------
+    # ---------- fetch tool -----------
     @mcp.tool()
     async def fetch(id: str):
         if id not in LOOKUP:
@@ -60,9 +62,9 @@ def create_server() -> FastMCP:
     return mcp
 
 
-# ───────────────────────────────────────────────────────────────
-#  Run directly (works for Render Free plan)
-# ───────────────────────────────────────────────────────────────
+# ───────────────────────────────────────────────────────────
+#  Run directly (works on Render free tier)
+# ───────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))  # Render injects $PORT
+    port = int(os.environ.get("PORT", 8000))   # Render injects $PORT
     create_server().run(transport="sse", host="0.0.0.0", port=port)
