@@ -27,9 +27,9 @@ LOOKUP  = {r["id"]: r for r in RECORDS}
 def create_server() -> FastMCP:
     mcp = FastMCP(name="Cupcake MCP", instructions="Search cupcake orders")
 
-    # metadata route so ChatGPT finds the tools
-    fastapi = mcp.app
-    @fastapi.get("/.well-known/mcp.json", include_in_schema=False)
+      # ── add this small block ───────────────────────────────
+    api = mcp.fastapi              # ← works in FastMCP 2.5.x
+    @api.get("/.well-known/mcp.json", include_in_schema=False)
     async def _metadata():
         return JSONResponse(mcp.schema())
 
