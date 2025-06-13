@@ -70,15 +70,9 @@ def create_server() -> FastMCP:
 
     return mcp
 
-
-# ---------------------------------------------------------------------------
-# When launched by a WSGI/ASGI runner (e.g. `uvicorn sample_mcp:app ...`)
-# ---------------------------------------------------------------------------
-app = create_server().asgi  
-
 # ---------------------------------------------------------------------------
 # When run directly (e.g. python sample_mcp.py) – local testing convenience
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    # Binds to localhost:8000 – good for “curl http://127.0.0.1:8000/.well-known/mcp.json”
-    create_server().run(transport="sse", host="127.0.0.1", port=8000)
+    port = int(os.environ.get("PORT", 8000))      # Render gives the port in $PORT
+    create_server().run(transport="sse", host="0.0.0.0", port=port)
