@@ -1,8 +1,6 @@
 """
-WORKING MCP ─ copy / paste over the whole file.
-
-• Publishes /.well-known/mcp.json so ChatGPT can add the connector.
-• Uses only attributes guaranteed in FastMCP 2.5.x (no .app or .fastapi).
+Cupcake MCP – works with FastMCP 2.5.x
+Publishes /.well-known/mcp.json so ChatGPT can discover the tools.
 """
 
 import json, os
@@ -10,7 +8,7 @@ from pathlib import Path
 from fastmcp.server import FastMCP
 from starlette.responses import JSONResponse
 
-# ───────────── demo data ─────────────
+# demo records -------------------------------------------------
 RECORDS = json.loads(Path(__file__).with_name("records.json").read_text())
 LOOKUP  = {r["id"]: r for r in RECORDS}
 
@@ -18,12 +16,12 @@ def create_server() -> FastMCP:
     mcp = FastMCP(name="Cupcake MCP",
                   instructions="Search cupcake orders")
 
-    # Metadata endpoint required by ChatGPT
-    @mcp.get("/.well-known/mcp.json", include_in_schema=False)
-    async def _meta():
+    # metadata route (must exist for ChatGPT connector)
+    @mcp.route("/.well-known/mcp.json", methods=["GET"], include_in_schema=False)
+    async def _meta(req):
         return JSONResponse(mcp.schema())
 
-    # ── search tool ──
+    # ---------- search ----------
     @mcp.tool()
     async def search(query: str):
         toks = query.lower().split()
@@ -38,7 +36,7 @@ def create_server() -> FastMCP:
         ]
         return {"ids": ids}
 
-    # ── fetch tool ──
+    # ---------- fetch -----------
     @mcp.tool()
     async def fetch(id: str):
         if id not in LOOKUP:
@@ -47,8 +45,7 @@ def create_server() -> FastMCP:
 
     return mcp
 
-# Run on Render -------------------------------------------------
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))   # Render injects $PORT
-    create_server().run(transport="sse",
-                        host="0.0.0.0", port=port)
+    # Render injects the port number via $PORT
+    port = int(os.environ.get("PORT", 8000))
+    create_server().run(transport="sse", host="0.0.0.0", port=port)
