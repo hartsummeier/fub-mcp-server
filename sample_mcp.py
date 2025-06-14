@@ -1,56 +1,62 @@
 """
-Minimal MCP server – works with FastMCP 2.5.x as-is.
-Still uses cupcake demo data so ChatGPT can connect.
+Works with fastmcp 2.5.x      Python ≥ 3.11
 
-Put your Follow Up Boss secrets in Render ➜ Environment:
-  • FUB_API_KEY
-  • FUB_CLIENT_ID
-  • FUB_CLIENT_SECRET
-  • FUB_X_SYSTEM  (if you have it)
-  • FUB_X_SYSTEM_KEY (if you have it)
+* CUPCAKE demo data so ChatGPT’s deep-research handshake succeeds
+* /.well-known/mcp.json is now served            ← ⭐ THIS FIXES 404
+* HEADERS ready for real Follow Up Boss calls
 """
 
-import json, os
 from pathlib import Path
-from fastmcp.server import FastMCP
+import json, os
 
-# --- optional FUB header holder (unused until you add real API calls) ----
+from fastapi import FastAPI
+from starlette.responses import JSONResponse
+from fastmcp.server import FastMCP     # pip install fastmcp (already in requirements)
+
+# ── FUB secrets (add these in Render ▸ Environment) ────────────────────
 HEADERS = {
-    "Authorization": f"Bearer {os.getenv('FUB_API_KEY', '')}",
-    "X-System":      os.getenv("FUB_X_SYSTEM", ""),
-    "X-System-Key":  os.getenv("FUB_X_SYSTEM_KEY", ""),
+    "Authorization": f"Bearer {os.environ.get('FUB_API_KEY', '')}",
+    "X-System":      os.environ.get("FUB_X_SYSTEM", ""),
+    "X-System-Key":  os.environ.get("FUB_X_SYSTEM_KEY", ""),
     "Content-Type":  "application/json",
 }
 
-# cupcake demo data -------------------------------------------------------
+# demo cupcake orders ---------------------------------------------------
 RECORDS = json.loads(Path(__file__).with_name("records.json").read_text())
 LOOKUP  = {r["id"]: r for r in RECORDS}
 
+# ── build the MCP server ───────────────────────────────────────────────
 mcp = FastMCP(name="Cupcake MCP", instructions="Search cupcake orders")
 
 @mcp.tool()
 async def search(query: str):
-    """Very dumb keyword search over demo data"""
-    needles = query.lower().split()
+    """Very dumb keyword search over demo cupcake orders."""
+    tokens = query.lower().split()
     ids = [
-        r["id"]
-        for r in RECORDS
-        if any(n in " ".join([r.get("title",""), r.get("text",""),
-                              " ".join(r.get("metadata",{}).values())]).lower()
-               for n in needles)
+        r["id"] for r in RECORDS
+        if any(tok in " ".join([r.get("title",""), r.get("text",""),
+                               " ".join(r.get("metadata",{}).values())]).lower()
+               for tok in tokens)
     ]
     return {"ids": ids}
 
 @mcp.tool()
 async def fetch(id: str):
-    """Return full record for the id ChatGPT asks for."""
+    """Return a full cupcake order by ID."""
     if id not in LOOKUP:
         raise ValueError("unknown id")
     return LOOKUP[id]
 
-# -------------------------------------------------------------------------
-#  Render (or local) entry-point
-# -------------------------------------------------------------------------
+# ── expose metadata + mount MCP under FastAPI ──────────────────────────
+app = FastAPI(title="Wrapped MCP server")
+app.mount("/", mcp)                                   # mounts SSE + messages
+@app.get("/.well-known/mcp.json", include_in_schema=False)
+async def _metadata():
+    return JSONResponse(mcp.schema())                 # ← ChatGPT reads this
+
+# ── local run (Render uses the uvicorn command we’ll set below) ────────
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))   # Render injects $PORT
-    mcp.run(transport="sse", host="0.0.0.0", port=port)
+    import uvicorn
+    uvicorn.run(app,
+                host="0.0.0.0",
+                port=int(os.environ.get("PORT", 8000)))
